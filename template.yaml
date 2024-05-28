@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: "AWS::Serverless-2016-10-31"
+Resources:
+  TextMessageQueue:
+    Type: "AWS::SQS::Queue"
+    Properties:
+      QueueName: "TextMessageQueue"
+
+  QueueMessageFunction:
+    Type: "AWS::Serverless::Function"
+    Properties:
+      FunctionName: "queueMessageFunction"
+      Handler: "handlers/queueMessage.handler"
+      Runtime: "nodejs14.x"
+      Environment:
+        Variables:
+          SQS_QUEUE_URL: !GetAtt TextMessageQueue.QueueUrl
+      CodeUri: s3://serverless-text-message-service/serverless-text-message-service.zip
+      Role: arn:aws:iam::529503791830:role/lambda-execution-role
+
+  SendMessageFunction:
+    Type: "AWS::Serverless::Function"
+    Properties:
+      FunctionName: "sendMessageFunction"
+      Handler: "handlers/sendMessage.handler"
+      Runtime: "nodejs14.x"
+      Environment:
+        Variables:
+          SQS_QUEUE_URL: !GetAtt TextMessageQueue.QueueUrl
+      CodeUri: s3://serverless-text-message-service/serverless-text-message-service.zip
+      Role: arn:aws:iam::529503791830:role/lambda-execution-role
+
+  TextMessageOrchestration:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      DefinitionString: |
+        {
+          "Comment": "A state machine for orchestrating text message sending",
+          "StartAt": "SendMessage",
+          "States": {
+            "SendMessage": {
+              "Type": "Task",
+              "Resource": "arn:aws:lambda:us-east-1:529503791830:function:sendMessageFunction",
+              "Retry": [
+                {
+                  "ErrorEquals": ["States.TaskFailed"],
+                  "IntervalSeconds": 5,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "HandleError"
+                }
+              ],
+              "End": true
+            },
+            "HandleError": {
+              "Type": "Fail",
+              "Error": "ErrorHandling",
+              "Cause": "Message sending failed after retries"
+            }
+          }
+        }
+      RoleArn: arn:aws:iam::529503791830:role/step-function-execution-role
+
+  APIGateway:
+    Type: "AWS::Serverless::Api"
+    Properties:
+      StageName: "prod"
+      DefinitionBody:
+        swagger: "2.0"
+        info:
+          title: "TextMessageAPI"
+          version: "1.0.0"
+        paths:
+          /queue-message:
+            post:
+              summary: "Queue a new text message"
+              parameters:
+                - in: "body"
+                  name: "message"
+                  required: true
+                  schema:
+                    type: "object"
+                    properties:
+                      to:
+                        type: "array"
+                        items:
+                          type: "string"
+                          example: "+1234567890"
+                      message:
+                        type: "string"
+              responses:
+                "200":
+                  description: "Successful response"
+              x-amazon-apigateway-integration:
+                httpMethod: "POST"
+                type: "aws_proxy"
+                uri:
+                  Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${QueueMessageFunction.Arn}/invocations"

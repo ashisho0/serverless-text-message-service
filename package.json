@@ -1,0 +1,18 @@
+{
+  "name": "serverless-text-message-service",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Mohamad Ashish",
+  "license": "ISC",
+  "dependencies": {
+    "aws-sdk": "^2.888.0",
+    "joi": "^17.13.1",
+    "uuid": "^8.3.2",
+    "winston": "^3.3.3",
+    "winston-cloudwatch": "^2.4.0"
+  }
+}
